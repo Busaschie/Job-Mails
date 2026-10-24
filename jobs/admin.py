@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin, TabularInline
 
-from .models import Bewerbung, Mail, Regel, Stellenanzeige
+from .models import Bewerbung, Mail, Regel, Shortlist, Stellenanzeige
 
 
 class BewerbungInline(TabularInline):
@@ -67,3 +67,34 @@ class StellenanzeigeAdmin(ModelAdmin):
     def anzeige_link(self, obj):
         art = "Indeed-Anzeige" if "viewjob" in obj.url else "Werbeanzeige (Tracking-Link)"
         return format_html('<a href="{}" target="_blank" rel="noopener">{} öffnen</a>', obj.url, art)
+
+
+@admin.register(Shortlist)
+class ShortlistAdmin(StellenanzeigeAdmin):
+    list_display = ("titel", "firma", "ort", "gehalt", "passung", "kategorie", "status", "grund", "link")
+    list_filter = ("kategorie", "passung", "status")
+    ordering = ("passung", "kategorie", "-erstellt_am")
+    actions = ["verwerfen", "als_passend"]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).filter(
+            passung__in=["passt", "teilweise", "unklar"],
+            status__in=[Stellenanzeige.Status.AUSGEWERTET, Stellenanzeige.Status.ABGERUFEN],
+        )
+
+    @admin.display(description="Begründung")
+    def grund(self, obj):
+        d = obj.daten or {}
+        return (d.get("passung_grund") or d.get("begruendung") or "")[:140]
+
+    @admin.display(description="Anzeige")
+    def link(self, obj):
+        return format_html('<a href="{}" target="_blank" rel="noopener">öffnen</a>', obj.url)
+
+    @admin.action(description="Verwerfen (Ausschluss)")
+    def verwerfen(self, request, queryset):
+        queryset.update(passung="ausschluss")
+
+    @admin.action(description="Als „Passt“ markieren")
+    def als_passend(self, request, queryset):
+        queryset.update(passung="passt")

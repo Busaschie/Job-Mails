@@ -18,10 +18,15 @@ muss_anforderungen (Liste der harten Muss-Kriterien: Abschluss, Jahre Berufserfa
 bonus (Liste der "Bonus"/"wünschenswert"-Punkte),
 kategorie ("frontend"|"vibecoding"|"pruefung"), beleg (wörtliches Zitat aus dem Text, das die Kategorie stützt, sonst ""),
 begruendung (ein kurzer Satz),
-passung ("passt"|"unklar"|"ausschluss") im Vergleich zum Bewerberprofil, passung_grund (ein kurzer Satz),
-ausschluss_beleg (wörtliches Zitat der Anforderung bzw. Rollenbeschreibung, die nicht zum Profil passt; sonst "").
-Passung: ausschluss NUR bei klarem Widerspruch zum Profil (z. B. Muss-Anforderung, die laut Profil fehlt, oder völlig anderes Berufsfeld) UND mit wörtlichem Beleg.
-passt = Rolle und Kernanforderungen decken sich mit dem Profil. unklar = Text reicht nicht für ein Urteil.
+passung ("passt"|"teilweise"|"unklar"|"ausschluss") im Vergleich zum Bewerberprofil, passung_grund (ein kurzer Satz),
+muss_abgleich (Liste von Objekten {{"anforderung": "...", "status": "erfuellt"|"teilweise"|"fehlt", "profil_beleg": "kurze Angabe aus dem Profil oder leer"}}),
+ausschluss_art ("abschluss"|"sprache"|"zertifikat"|"hauptstack"|"berufsfeld"|"" wenn kein Ausschluss),
+ausschluss_beleg (wörtliches Zitat aus der Anzeige, das den Ausschluss begründet; sonst "").
+Passung: ausschluss NUR bei hartem K.-o.-Kriterium: abschluss (geforderter Abschluss/Zertifikat ohne gleichwertige Alternative im Profil),
+sprache (Pflichtsprache fehlt), zertifikat, hauptstack (völlig anderer Hauptstack, z. B. Java-Backend, SAP, .NET) oder berufsfeld (ganz anderes Berufsfeld).
+Einzelne fehlende Frameworks/Tools oder Jahre in EINER Technologie sind KEIN Ausschluss, sondern "teilweise".
+Steht "Studium oder vergleichbare Qualifikation/Ausbildung", gelten Techniker-Abschluss plus langjährige Erfahrung als gleichwertig.
+passt = Kernanforderungen decken sich mit dem Profil. teilweise = Rolle passt, aber einzelne Muss-Punkte fehlen. unklar = Text reicht nicht für ein Urteil.
 {KATEGORIEN}
 Verwende nur Angaben, die im Text stehen. Fehlendes = null bzw. leere Liste. Erfinde nichts."""
 
@@ -32,10 +37,14 @@ gehalt (string oder null),
 kategorie ("frontend"|"vibecoding"|"pruefung"),
 beleg (wörtliches Zitat aus dem Text, das die Kategorie stützt; sonst ""),
 begruendung (ein kurzer Satz),
-passung ("passt"|"unklar"|"ausschluss") im Vergleich zum Bewerberprofil, passung_grund (ein kurzer Satz),
-ausschluss_beleg (wörtliches Zitat der Anforderung bzw. Rollenbeschreibung, die nicht zum Profil passt; sonst "").
-Passung: ausschluss NUR bei klarem Widerspruch zum Profil (z. B. Muss-Anforderung, die laut Profil fehlt, oder völlig anderes Berufsfeld) UND mit wörtlichem Beleg.
-passt = Rolle und Kernanforderungen decken sich mit dem Profil. unklar = Text reicht nicht für ein Urteil.
+passung ("passt"|"teilweise"|"unklar"|"ausschluss") im Vergleich zum Bewerberprofil, passung_grund (ein kurzer Satz),
+ausschluss_art ("abschluss"|"sprache"|"zertifikat"|"hauptstack"|"berufsfeld"|"" wenn kein Ausschluss),
+ausschluss_beleg (wörtliches Zitat aus dem Text, das den Ausschluss begründet; sonst "").
+Passung: ausschluss NUR bei hartem K.-o.-Kriterium: abschluss (geforderter Abschluss/Zertifikat ohne gleichwertige Alternative im Profil),
+sprache (Pflichtsprache fehlt), zertifikat, hauptstack (völlig anderer Hauptstack, z. B. Java-Backend, SAP, .NET) oder berufsfeld (ganz anderes Berufsfeld).
+Einzelne fehlende Frameworks/Tools oder Jahre in EINER Technologie sind KEIN Ausschluss, sondern "teilweise".
+Steht "Studium oder vergleichbare Qualifikation/Ausbildung", gelten Techniker-Abschluss plus langjährige Erfahrung als gleichwertig.
+passt = Kernanforderungen decken sich mit dem Profil. teilweise = Rolle passt, aber einzelne Muss-Punkte fehlen. unklar = Text reicht nicht für ein Urteil.
 {KATEGORIEN}
 Wähle frontend oder vibecoding NUR, wenn im Text ein klarer Hinweis steht und du ihn in "beleg" wörtlich zitieren kannst.
 Sonst pruefung. Liefere KEINE Aufgaben, Anforderungen, Skills oder Benefits und erfinde nichts."""
@@ -66,7 +75,10 @@ def normalisieren(d, quelle, kurz):
         d["begruendung"] = f"Kein wörtlicher Beleg im Text (vorgeschlagen: {kat}). " + (d.get("begruendung") or "")
         kat = "pruefung"
     d["kategorie"] = kat
-    p = d.get("passung") if d.get("passung") in ("passt", "unklar", "ausschluss") else "unklar"
+    p = d.get("passung") if d.get("passung") in ("passt", "teilweise", "unklar", "ausschluss") else "unklar"
+    if p == "ausschluss" and d.get("ausschluss_art") not in ("abschluss", "sprache", "zertifikat", "hauptstack", "berufsfeld"):
+        d["passung_grund"] = "Kein hartes K.-o.-Kriterium -> teilweise. " + (d.get("passung_grund") or "")
+        p = "teilweise"
     ab = (d.get("ausschluss_beleg") or "").strip().lower()
     if p == "ausschluss" and (not ab or ab not in " ".join(quelle.lower().split())):
         d["passung_grund"] = "Ausschluss ohne wörtlichen Beleg -> unklar. " + (d.get("passung_grund") or "")
@@ -83,6 +95,8 @@ class Command(BaseCommand):
         parser.add_argument("--limit", type=int, default=5)
         parser.add_argument("--aus-mail", action="store_true",
                             help="Auch Anzeigen ohne abgerufene Seite nur aus dem Mail-Kurztext auswerten")
+        parser.add_argument("--volltext", action="store_true", help="Nur Anzeigen mit gespeichertem Seitentext")
+        parser.add_argument("--suche", default="", help="Nur Anzeigen, deren Titel oder Firma diesen Text enthalten")
         parser.add_argument("--alle", action="store_true", help="Bereits ausgewertete Anzeigen erneut auswerten")
 
     def handle(self, *args, **opt):
@@ -90,7 +104,13 @@ class Command(BaseCommand):
         stati = [S.ABGERUFEN] + ([S.NEU] if opt["aus_mail"] else []) + ([S.AUSGEWERTET] if opt["alle"] else [])
         ok = fail = regel_treffer = 0
         begriffe = list(Regel.objects.filter(aktiv=True, typ=Regel.Typ.NEGATIV).values_list("begriff", flat=True))
-        for a in Stellenanzeige.objects.filter(status__in=stati)[: opt["limit"]]:
+        qs = Stellenanzeige.objects.filter(status__in=stati)
+        if opt["volltext"]:
+            qs = qs.exclude(seitentext="")
+        if opt["suche"]:
+            from django.db.models import Q
+            qs = qs.filter(Q(titel__icontains=opt["suche"]) | Q(firma__icontains=opt["suche"]))
+        for a in qs[: opt["limit"]]:
             kurz = not a.seitentext
             treffer = titel_ausschluss(a.titel, begriffe)
             if treffer:

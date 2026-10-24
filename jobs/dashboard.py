@@ -12,7 +12,7 @@ def dashboard_callback(request, context):
         {
             "anzeigen_gesamt": Stellenanzeige.objects.count(),
             "anzeigen_ausgewertet": Stellenanzeige.objects.filter(status="ausgewertet").count(),
-            "passung_karten": [(l, Stellenanzeige.objects.filter(passung=k).count()) for k, l in [("passt", "Passt"), ("unklar", "Unklar"), ("ausschluss", "Ausschluss")]],
+            "passung_karten": [(l, Stellenanzeige.objects.filter(passung=k).count()) for k, l in [("passt", "Passt"), ("teilweise", "Teilweise"), ("unklar", "Unklar"), ("ausschluss", "Ausschluss")]],
             "mails_gesamt": Mail.objects.count(),
             "ordner_karten": [(label, nach_ordner.get(key, 0)) for key, label in ordner.items()],
             "status_karten": [(label, nach_status.get(key, 0)) for key, label in status.items()],

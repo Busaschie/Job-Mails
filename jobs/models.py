@@ -101,7 +101,7 @@ class Stellenanzeige(models.Model):
     kategorie = models.CharField("Kategorie", max_length=10, blank=True,
                                  choices=[("frontend", "Frontend"), ("vibecoding", "VibeCoding"), ("pruefung", "Pruefung")])
     passung = models.CharField("Passung zum Profil", max_length=10, blank=True,
-                               choices=[("passt", "Passt"), ("unklar", "Unklar"), ("ausschluss", "Ausschluss")])
+                               choices=[("passt", "Passt"), ("teilweise", "Teilweise"), ("unklar", "Unklar"), ("ausschluss", "Ausschluss")])
     erstellt_am = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -111,3 +111,12 @@ class Stellenanzeige(models.Model):
 
     def __str__(self):
         return f"{self.titel} – {self.firma}"
+
+
+class Shortlist(Stellenanzeige):
+    """Ansicht auf Anzeigen, die zum Profil passen oder noch unklar sind."""
+
+    class Meta:
+        proxy = True
+        verbose_name = "Shortlist"
+        verbose_name_plural = "Shortlist"

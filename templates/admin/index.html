@@ -19,6 +19,23 @@
   </section>
 
   <section>
+    <h2 class="text-lg font-semibold mb-3">Stellenanzeigen</h2>
+    <div class="grid gap-4 grid-cols-2">
+      <div class="border rounded-default p-4 bg-white dark:bg-base-900 dark:border-base-800"><div class="text-sm text-base-500">Gesamt (ohne Duplikate)</div><div class="text-3xl font-semibold">{{ anzeigen_gesamt }}</div></div>
+      <div class="border rounded-default p-4 bg-white dark:bg-base-900 dark:border-base-800"><div class="text-sm text-base-500">Per LLM ausgewertet</div><div class="text-3xl font-semibold">{{ anzeigen_ausgewertet }}</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="text-lg font-semibold mb-3">Passung zum Profil</h2>
+    <div class="grid gap-4 grid-cols-3">
+      {% for label, n in passung_karten %}
+      <div class="border rounded-default p-4 bg-white dark:bg-base-900 dark:border-base-800"><div class="text-sm text-base-500">{{ label }}</div><div class="text-3xl font-semibold">{{ n }}</div></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
     <h2 class="text-lg font-semibold mb-3">Bewerbungen nach Status</h2>
     <div class="grid gap-4 grid-cols-2 md:grid-cols-6">
       {% for label, n in status_karten %}

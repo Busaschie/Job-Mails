@@ -1,7 +1,8 @@
 from django.contrib import admin
+from django.utils.html import format_html
 from unfold.admin import ModelAdmin, TabularInline
 
-from .models import Bewerbung, Mail, Regel
+from .models import Bewerbung, Mail, Regel, Stellenanzeige
 
 
 class BewerbungInline(TabularInline):
@@ -11,7 +12,7 @@ class BewerbungInline(TabularInline):
 
 @admin.register(Regel)
 class RegelAdmin(ModelAdmin):
-    list_display = ("begriff", "typ", "aktiv")
+    list_display = ("begriff", "typ", "ziel", "aktiv")
     list_filter = ("typ", "aktiv")
     search_fields = ("begriff",)
     list_editable = ("aktiv",)
@@ -24,15 +25,19 @@ class MailAdmin(ModelAdmin):
     search_fields = ("betreff", "titel", "firma", "treffer")
     date_hierarchy = "empfangen_am"
     inlines = [BewerbungInline]
-    actions = ["als_passend", "zur_pruefung"]
+    actions = ["nach_frontend", "nach_vibecoding", "nach_pruefung"]
 
-    @admin.action(description="Als „Kommt in Frage“ markieren")
-    def als_passend(self, request, queryset):
-        queryset.update(ordner=Mail.Ordner.PASSEND)
+    @admin.action(description="Nach „Frontend“")
+    def nach_frontend(self, request, queryset):
+        queryset.update(ordner=Mail.Ordner.FRONTEND)
 
-    @admin.action(description="In „Zur Überprüfung“ verschieben")
-    def zur_pruefung(self, request, queryset):
-        queryset.update(ordner=Mail.Ordner.PRUEFEN)
+    @admin.action(description="Nach „VibeCoding“")
+    def nach_vibecoding(self, request, queryset):
+        queryset.update(ordner=Mail.Ordner.VIBECODING)
+
+    @admin.action(description="Nach „Pruefung“")
+    def nach_pruefung(self, request, queryset):
+        queryset.update(ordner=Mail.Ordner.PRUEFUNG)
 
 
 @admin.register(Bewerbung)
@@ -40,3 +45,25 @@ class BewerbungAdmin(ModelAdmin):
     list_display = ("mail", "beworben_am", "status")
     list_filter = ("status",)
     date_hierarchy = "beworben_am"
+
+
+@admin.register(Stellenanzeige)
+class StellenanzeigeAdmin(ModelAdmin):
+    list_display = ("titel", "firma", "ort", "gehalt", "passung", "kategorie", "status", "erstellt_am")
+    list_filter = ("passung", "kategorie", "status")
+    search_fields = ("titel", "firma", "ort", "snippet")
+    fields = ("titel", "firma", "ort", "gehalt", "alter_text", "status", "passung", "kategorie", "anzeige_link",
+              "snippet", "daten", "seitentext", "fehler", "mail", "schluessel", "erstellt_am")
+    readonly_fields = ("anzeige_link", "schluessel", "mail", "erstellt_am")
+
+    def save_model(self, request, obj, form, change):
+        # Volltext von Hand eingefügt -> für die Detail-Auswertung freigeben
+        if "seitentext" in form.changed_data and obj.seitentext.strip():
+            obj.status = Stellenanzeige.Status.ABGERUFEN
+            obj.fehler = ""
+        super().save_model(request, obj, form, change)
+
+    @admin.display(description="Anzeige")
+    def anzeige_link(self, obj):
+        art = "Indeed-Anzeige" if "viewjob" in obj.url else "Werbeanzeige (Tracking-Link)"
+        return format_html('<a href="{}" target="_blank" rel="noopener">{} öffnen</a>', obj.url, art)

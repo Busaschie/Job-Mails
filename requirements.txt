@@ -1,2 +1,5 @@
 django>=6.1
 django-unfold
+psycopg[binary]
+requests
+beautifulsoup4

@@ -1,0 +1,50 @@
+{% extends 'unfold/layouts/base.html' %}
+{% load i18n %}
+
+{% block breadcrumbs %}{% endblock %}
+{% block title %}Übersicht | {{ site_title }}{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-8 p-4">
+  <section>
+    <h2 class="text-lg font-semibold mb-3">Mails ({{ mails_gesamt }})</h2>
+    <div class="grid gap-4 grid-cols-1 md:grid-cols-3">
+      {% for label, n in ordner_karten %}
+      <div class="border rounded-default p-4 bg-white dark:bg-base-900 dark:border-base-800">
+        <div class="text-sm text-base-500">{{ label }}</div>
+        <div class="text-3xl font-semibold">{{ n }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2 class="text-lg font-semibold mb-3">Bewerbungen nach Status</h2>
+    <div class="grid gap-4 grid-cols-2 md:grid-cols-6">
+      {% for label, n in status_karten %}
+      <div class="border rounded-default p-4 bg-white dark:bg-base-900 dark:border-base-800">
+        <div class="text-sm text-base-500">{{ label }}</div>
+        <div class="text-2xl font-semibold">{{ n }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2 class="text-lg font-semibold mb-3">Letzte Bewerbungen</h2>
+    <table class="w-full text-sm border rounded-default dark:border-base-800">
+      <thead><tr class="text-left"><th class="p-2">Job</th><th class="p-2">Firma</th><th class="p-2">Beworben am</th><th class="p-2">Status</th></tr></thead>
+      <tbody>
+      {% for b in letzte_bewerbungen %}
+        <tr class="border-t dark:border-base-800">
+          <td class="p-2">{{ b.mail }}</td><td class="p-2">{{ b.mail.firma }}</td>
+          <td class="p-2">{{ b.beworben_am|date:"d.m.Y" }}</td><td class="p-2">{{ b.get_status_display }}</td>
+        </tr>
+      {% empty %}
+        <tr><td class="p-2" colspan="4">Noch keine Bewerbungen.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

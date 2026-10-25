@@ -1,6 +1,6 @@
 # Job-Mails
 
-Django-Projekt, das Job-Alert-Mails von Indeed aus einem IMAP-Postfach liest, die einzelnen Stellen extrahiert, mit einem LLM gegen das eigene Profil bewertet und in einem Admin-Dashboard (django-unfold) als **Shortlist** aufbereitet. Bewerbungen und ihr Status werden im selben System verfolgt.
+Django-Projekt, das Job-Alert-Mails von Indeed, StepStone und Jobware aus einem IMAP-Postfach liest, die einzelnen Stellen extrahiert, mit einem LLM gegen das eigene Profil bewertet und in einem Admin-Dashboard (django-unfold) als **Shortlist** aufbereitet. Bewerbungen und ihr Status werden im selben System verfolgt.
 
 ## Ablauf (Pipeline)
 

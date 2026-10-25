@@ -6,7 +6,7 @@ from django.core.management.base import BaseCommand
 from jobs.llm import RateLimitError, complete_json
 from jobs.models import Regel, Stellenanzeige
 
-PROMPT_VERSION = "3"  # bei Prompt-/Profil-Änderungen erhöhen, dann --veraltet nutzen
+PROMPT_VERSION = "4"  # bei Prompt-/Profil-Änderungen erhöhen, dann --veraltet nutzen
 
 KATEGORIEN = """Kategorie: frontend = Web-Frontend-Entwicklung (HTML, CSS, JavaScript, React/Vue, UX/UI);
 vibecoding = KI-gestützte Entwicklung, KI-/LLM-Orchestrierung, Prompting, Automatisierung mit KI-Tools;
@@ -64,6 +64,15 @@ def titel_ausschluss(titel, begriffe):
     return ""
 
 
+def kategorie_per_stichwort(text):
+    """Fallback: positive Regeln (Regel.typ=positiv) als Ganzwort in Titel/Kurztext -> frontend/vibecoding."""
+    from jobs.models import Regel
+    for r in Regel.objects.filter(typ="positiv", aktiv=True):
+        if re.search(r"(?<![\w+#.])" + re.escape(r.begriff) + r"(?![\w+#])", text, flags=re.I):
+            return r.ziel if r.ziel in ("frontend", "vibecoding") else ""
+    return ""
+
+
 def profil():
     try:
         return settings.PROFIL_DATEI.read_text(encoding="utf-8")
@@ -80,6 +89,8 @@ def normalisieren(d, quelle, kurz, begriffe=()):
     if kat != "pruefung" and (not beleg or beleg.lower() not in " ".join(quelle.lower().split())):
         d["begruendung"] = f"Kein wörtlicher Beleg im Text (vorgeschlagen: {kat}). " + (d.get("begruendung") or "")
         kat = "pruefung"
+    if kat == "pruefung":
+        kat = kategorie_per_stichwort(f'{d.get("titel", "")} {quelle}') or kat
     d["kategorie"] = kat
     p = d.get("passung") if d.get("passung") in ("passt", "teilweise", "unklar", "ausschluss") else "unklar"
     if p == "ausschluss" and d.get("ausschluss_art") not in ("abschluss", "sprache", "zertifikat", "hauptstack", "berufsfeld"):
@@ -121,6 +132,8 @@ class Command(BaseCommand):
         ok = fail = regel_treffer = 0
         begriffe = list(Regel.objects.filter(aktiv=True, typ=Regel.Typ.NEGATIV).values_list("begriff", flat=True))
         qs = Stellenanzeige.objects.filter(pk=opt["id"]) if opt["id"] else Stellenanzeige.objects.filter(status__in=stati)
+        if not opt["id"]:
+            qs = qs.filter(duplikat_von__isnull=True)
         if opt["veraltet"] and not opt["id"]:
             from django.db.models import Q
             # Zeilen ohne Versionsmarke (Schlüssel fehlt) müssen mit, daher isnull explizit

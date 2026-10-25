@@ -9,7 +9,7 @@ WUNSCH = ["frontend", "vibecoding"]
 
 def shortlist_basis(qs):
     """Passt immer; Teilweise/Unklar nur bei Wunsch-Kategorie (Frontend/VibeCoding)."""
-    return qs.filter(status__in=["ausgewertet", "abgerufen"]).filter(
+    return qs.filter(duplikat_von__isnull=True, status__in=["ausgewertet", "abgerufen"]).filter(
         Q(passung="passt") | (Q(passung__in=["teilweise", "unklar"]) & Q(kategorie__in=WUNSCH))
     )
 

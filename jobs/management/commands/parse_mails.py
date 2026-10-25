@@ -68,6 +68,11 @@ class Command(BaseCommand):
             body = msg.get_body(preferencelist=("plain",))
             text = body.get_content() if body else ""
             for j in parse_alert(text):
+                if not Stellenanzeige.objects.filter(schluessel=j["schluessel"]).exists() and Stellenanzeige.objects.filter(
+                        titel__iexact=j["titel"][:300].strip(), firma__iexact=j["firma"][:255].strip(),
+                        ort__iexact=j["ort"][:255].strip()).exists():
+                    dup += 1  # gleiche Anzeige mit neuer Indeed-ID (erneut ausgespielt)
+                    continue
                 _, created = Stellenanzeige.objects.get_or_create(
                     schluessel=j["schluessel"],
                     defaults=dict(mail=mail, titel=j["titel"][:300], firma=j["firma"][:255], ort=j["ort"][:255],

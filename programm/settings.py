@@ -162,8 +162,30 @@ MAILERS = {
     },
 }
 
+from django.urls import reverse_lazy
+
 UNFOLD = {
     "SITE_TITLE": "Job-Mails",
     "SITE_HEADER": "Job-Mails",
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": False,
+        "navigation": [
+            {"title": "Status", "separator": True, "items": [
+                {"title": "Bewerbungen", "icon": "work", "link": reverse_lazy("admin:jobs_bewerbung_changelist")},
+                {"title": "Shortlist", "icon": "star", "link": reverse_lazy("admin:jobs_shortlist_changelist")},
+                {"title": "Stellenanzeigen", "icon": "description", "link": reverse_lazy("admin:jobs_stellenanzeige_changelist")},
+            ]},
+            {"title": "Mails", "separator": True, "items": [
+                {"title": "Mails", "icon": "mail", "link": reverse_lazy("admin:jobs_mail_changelist")},
+                {"title": "Regeln", "icon": "rule", "link": reverse_lazy("admin:jobs_regel_changelist")},
+                {"title": "Pipeline-Läufe", "icon": "sync", "link": reverse_lazy("admin:jobs_pipelinelauf_changelist")},
+            ]},
+            {"title": "User", "separator": True, "items": [
+                {"title": "Benutzer", "icon": "person", "link": reverse_lazy("admin:auth_user_changelist")},
+                {"title": "Gruppen", "icon": "group", "link": reverse_lazy("admin:auth_group_changelist")},
+            ]},
+        ],
+    },
     "DASHBOARD_CALLBACK": "jobs.dashboard.dashboard_callback",
 }

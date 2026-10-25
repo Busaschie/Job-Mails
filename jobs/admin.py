@@ -1,4 +1,6 @@
 from django import forms
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.contrib import admin
 from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
@@ -47,6 +49,40 @@ class BewerbungAdmin(ModelAdmin):
     list_display = ("anzeige", "firma", "beworben_am", "status")
     list_filter = ("status",)
     date_hierarchy = "beworben_am"
+    fieldsets = (
+        ("Bewerbung", {"fields": ("anzeige", "beworben_am", "status", "notizen")}),
+        ("Stellenanzeige", {"fields": ("a_titel", "a_firma", "a_ort", "a_gehalt", "a_passung", "a_link", "a_auswertung")}),
+    )
+    readonly_fields = ("a_titel", "a_firma", "a_ort", "a_gehalt", "a_passung", "a_link", "a_auswertung")
+
+    @admin.display(description="Titel")
+    def a_titel(self, obj):
+        return obj.anzeige.titel if obj.pk else ""
+
+    @admin.display(description="Firma")
+    def a_firma(self, obj):
+        return obj.anzeige.firma if obj.pk else ""
+
+    @admin.display(description="Ort")
+    def a_ort(self, obj):
+        return obj.anzeige.ort if obj.pk else ""
+
+    @admin.display(description="Gehalt")
+    def a_gehalt(self, obj):
+        return obj.anzeige.gehalt if obj.pk else ""
+
+    @admin.display(description="Passung / Kategorie")
+    def a_passung(self, obj):
+        return f"{obj.anzeige.get_passung_display()} / {obj.anzeige.kategorie}" if obj.pk else ""
+
+    @admin.display(description="Anzeige")
+    def a_link(self, obj):
+        return StellenanzeigeAdmin.anzeige_link(self, obj.anzeige) if obj.pk else ""
+
+    @admin.display(description="Auswertung (lesbar)")
+    def a_auswertung(self, obj):
+        return StellenanzeigeAdmin.daten_lesbar(self, obj.anzeige) if obj.pk else ""
+
 
     @admin.display(description="Firma")
     def firma(self, obj):
@@ -86,9 +122,9 @@ class StellenanzeigeAdmin(ModelAdmin):
                            "anzeige_link", "snippet", "daten_lesbar", "seitentext")}),
         ("Bewerbung", {"fields": ("beworben_am", "bewerbung_status", "bewerbung_notizen")}),
         ("Rohdaten (JSON)", {"classes": ("collapse",), "fields": ("daten",)}),
-        ("Technisches", {"classes": ("collapse",), "fields": ("fehler", "mail", "schluessel")}),
+        ("Technisches", {"classes": ("collapse",), "fields": ("fehler", "mail", "schluessel", "duplikat_von")}),
     )
-    readonly_fields = ("nr", "daten_lesbar", "anzeige_link", "schluessel", "mail", "erstellt_am")
+    readonly_fields = ("nr", "daten_lesbar", "anzeige_link", "schluessel", "mail", "erstellt_am", "duplikat_von")
 
     @admin.display(description="Beworben")
     def beworben(self, obj):

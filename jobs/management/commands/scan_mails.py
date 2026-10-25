@@ -11,6 +11,8 @@ from django.utils import timezone
 
 from jobs.models import Mail, Regel
 
+APPLY_SENDER = "indeedapply@indeed.com"
+
 ZIELE = {
     Mail.Ordner.INDEED: "Indeed",
     Mail.Ordner.FRONTEND: "Frontend",
@@ -77,11 +79,34 @@ class Command(BaseCommand):
                 return m.group(1).decode()
         return "/"
 
+    def _beworben(self, imap, base, delim, opt):
+        """Bestätigungen von indeedapply@indeed.com -> Ordner Beworben (nicht in der DB)."""
+        typ, data = imap.uid("search", None, "FROM", f'"{APPLY_SENDER}"')
+        uids = data[0].split() if typ == "OK" and data and data[0] else []
+        self.stdout.write(f"{len(uids)} Bewerbungs-Mails von '{APPLY_SENDER}'.")
+        if opt["dry_run"]:
+            self.stdout.write("(dry-run: nichts verschoben)")
+            return
+        if not uids:
+            return
+        ziel = f'"{base}{delim}Beworben"'
+        bewegt = 0
+        for uid in uids:
+            typ, antwort = imap.uid("copy", uid, ziel)
+            if typ == "OK":
+                imap.uid("store", uid, "+FLAGS", r"(\Deleted)")
+                bewegt += 1
+            else:
+                self.stderr.write(f"Kopieren nach {ziel} fehlgeschlagen: {antwort}")
+        imap.expunge()
+        self.stdout.write(f"{bewegt} Bewerbungs-Mail(s) nach Beworben verschoben.")
+
     def _scan(self, imap, opt):
         s = settings
         delim = self._delimiter(imap)
         base = s.IMAP_BASE_FOLDER.replace("/", delim)
         imap.select(f'"{s.IMAP_FOLDER}"')
+        self._beworben(imap, base, delim, opt)
         typ, data = imap.uid("search", None, "FROM", f'"{s.IMAP_SENDER}"')
         uids = data[0].split()[-opt["limit"]:]
         self.stdout.write(f"{len(uids)} Mails von '{s.IMAP_SENDER}' gefunden.")

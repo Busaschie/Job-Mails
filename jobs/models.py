@@ -104,6 +104,8 @@ class Stellenanzeige(models.Model):
     passung = models.CharField("Passung zum Profil", max_length=10, blank=True,
                                choices=[("passt", "Passt"), ("teilweise", "Teilweise"), ("unklar", "Unklar"), ("ausschluss", "Ausschluss")])
     erstellt_am = models.DateTimeField(auto_now_add=True)
+    duplikat_von = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name="duplikate", verbose_name="Duplikat von")
 
     class Meta:
         verbose_name = "Stellenanzeige"

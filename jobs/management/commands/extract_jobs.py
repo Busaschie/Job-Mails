@@ -25,8 +25,10 @@ ausschluss_beleg (wörtliches Zitat aus der Anzeige, das den Ausschluss begründ
 Passung: ausschluss NUR bei hartem K.-o.-Kriterium: abschluss (geforderter Abschluss/Zertifikat ohne gleichwertige Alternative im Profil),
 sprache (Pflichtsprache fehlt), zertifikat, hauptstack (völlig anderer Hauptstack, z. B. Java-Backend, SAP, .NET) oder berufsfeld (ganz anderes Berufsfeld).
 Einzelne fehlende Frameworks/Tools oder Jahre in EINER Technologie sind KEIN Ausschluss, sondern "teilweise".
+Ein anderes Framework oder Tool derselben Sprache/Technologie-Familie (z. B. React/TypeScript bei vorhandenem JavaScript, Django statt Flask) ist KEIN "hauptstack"-Unterschied, sondern "teilweise". "hauptstack" gilt nur für eine andere Sprache bzw. Plattform (Java, .NET, SAP, C++).
 Steht "Studium oder vergleichbare Qualifikation/Ausbildung", gelten Techniker-Abschluss plus langjährige Erfahrung als gleichwertig.
-passt = Kernanforderungen decken sich mit dem Profil. teilweise = Rolle passt, aber einzelne Muss-Punkte fehlen. unklar = Text reicht nicht für ein Urteil.
+Nutzerpräferenz: Fehlende Frameworks (React, TypeScript, Angular, Vue), fehlende Jahre in einer einzelnen Technologie und ein fehlendes Studium sind KEIN Hindernis. Passen Rolle und Grundskills (Web, JavaScript/HTML/CSS, Python, KI) zum Profil und fehlen nur solche Punkte, lautet die Passung "passt" (die Lücken stehen im muss_abgleich).
+passt = Rolle und Kernanforderungen decken sich mit dem Profil, auch wenn einzelne Frameworks fehlen. teilweise = Rolle passt nur zum Teil oder wesentliche Grundskills fehlen. unklar = Text reicht nicht für ein Urteil.
 {KATEGORIEN}
 Verwende nur Angaben, die im Text stehen. Fehlendes = null bzw. leere Liste. Erfinde nichts."""
 
@@ -43,8 +45,10 @@ ausschluss_beleg (wörtliches Zitat aus dem Text, das den Ausschluss begründet;
 Passung: ausschluss NUR bei hartem K.-o.-Kriterium: abschluss (geforderter Abschluss/Zertifikat ohne gleichwertige Alternative im Profil),
 sprache (Pflichtsprache fehlt), zertifikat, hauptstack (völlig anderer Hauptstack, z. B. Java-Backend, SAP, .NET) oder berufsfeld (ganz anderes Berufsfeld).
 Einzelne fehlende Frameworks/Tools oder Jahre in EINER Technologie sind KEIN Ausschluss, sondern "teilweise".
+Ein anderes Framework oder Tool derselben Sprache/Technologie-Familie (z. B. React/TypeScript bei vorhandenem JavaScript, Django statt Flask) ist KEIN "hauptstack"-Unterschied, sondern "teilweise". "hauptstack" gilt nur für eine andere Sprache bzw. Plattform (Java, .NET, SAP, C++).
 Steht "Studium oder vergleichbare Qualifikation/Ausbildung", gelten Techniker-Abschluss plus langjährige Erfahrung als gleichwertig.
-passt = Kernanforderungen decken sich mit dem Profil. teilweise = Rolle passt, aber einzelne Muss-Punkte fehlen. unklar = Text reicht nicht für ein Urteil.
+Nutzerpräferenz: Fehlende Frameworks (React, TypeScript, Angular, Vue), fehlende Jahre in einer einzelnen Technologie und ein fehlendes Studium sind KEIN Hindernis. Passen Rolle und Grundskills (Web, JavaScript/HTML/CSS, Python, KI) zum Profil und fehlen nur solche Punkte, lautet die Passung "passt" (die Lücken stehen im muss_abgleich).
+passt = Rolle und Kernanforderungen decken sich mit dem Profil, auch wenn einzelne Frameworks fehlen. teilweise = Rolle passt nur zum Teil oder wesentliche Grundskills fehlen. unklar = Text reicht nicht für ein Urteil.
 {KATEGORIEN}
 Wähle frontend oder vibecoding NUR, wenn im Text ein klarer Hinweis steht und du ihn in "beleg" wörtlich zitieren kannst.
 Sonst pruefung. Liefere KEINE Aufgaben, Anforderungen, Skills oder Benefits und erfinde nichts."""
@@ -65,7 +69,7 @@ def profil():
         return ""
 
 
-def normalisieren(d, quelle, kurz):
+def normalisieren(d, quelle, kurz, begriffe=()):
     d = dict(d)
     if "begründung" in d:
         d["begruendung"] = d.pop("begründung")
@@ -83,6 +87,12 @@ def normalisieren(d, quelle, kurz):
     if p == "ausschluss" and (not ab or ab not in " ".join(quelle.lower().split())):
         d["passung_grund"] = "Ausschluss ohne wörtlichen Beleg -> unklar. " + (d.get("passung_grund") or "")
         p = "unklar"
+    # "hauptstack" nur gültig, wenn der Beleg/Titel einen Ausschlussbegriff (Java, .NET, SAP ...) enthält
+    if p == "ausschluss" and d.get("ausschluss_art") == "hauptstack":
+        pruef = f'{d.get("ausschluss_beleg", "")} {d.get("titel", "")}'
+        if not titel_ausschluss(pruef, begriffe):
+            d["passung_grund"] = "Anderes Framework derselben Sprache, kein Hauptstack-Wechsel -> teilweise. " + (d.get("passung_grund") or "")
+            p = "teilweise"
     d["passung"] = p
     d["datenbasis"] = "mail-kurztext" if kurz else "seitentext"
     return d, kat, p
@@ -95,16 +105,18 @@ class Command(BaseCommand):
         parser.add_argument("--limit", type=int, default=5)
         parser.add_argument("--aus-mail", action="store_true",
                             help="Auch Anzeigen ohne abgerufene Seite nur aus dem Mail-Kurztext auswerten")
+        parser.add_argument("--id", type=int, default=0, help="Nur diese Anzeige (Nr. aus dem Admin), unabhängig vom Status")
+        parser.add_argument("--retry", action="store_true", help="Auch Anzeigen mit Status Fehler erneut versuchen")
         parser.add_argument("--volltext", action="store_true", help="Nur Anzeigen mit gespeichertem Seitentext")
         parser.add_argument("--suche", default="", help="Nur Anzeigen, deren Titel oder Firma diesen Text enthalten")
         parser.add_argument("--alle", action="store_true", help="Bereits ausgewertete Anzeigen erneut auswerten")
 
     def handle(self, *args, **opt):
         S = Stellenanzeige.Status
-        stati = [S.ABGERUFEN] + ([S.NEU] if opt["aus_mail"] else []) + ([S.AUSGEWERTET] if opt["alle"] else [])
+        stati = [S.ABGERUFEN] + ([S.NEU] if opt["aus_mail"] else []) + ([S.AUSGEWERTET] if opt["alle"] else []) + ([S.FEHLER] if opt["retry"] else [])
         ok = fail = regel_treffer = 0
         begriffe = list(Regel.objects.filter(aktiv=True, typ=Regel.Typ.NEGATIV).values_list("begriff", flat=True))
-        qs = Stellenanzeige.objects.filter(status__in=stati)
+        qs = Stellenanzeige.objects.filter(pk=opt["id"]) if opt["id"] else Stellenanzeige.objects.filter(status__in=stati)
         if opt["volltext"]:
             qs = qs.exclude(seitentext="")
         if opt["suche"]:
@@ -119,19 +131,20 @@ class Command(BaseCommand):
                 a.passung, a.kategorie, a.status, a.fehler = "ausschluss", "pruefung", S.AUSGEWERTET, ""
                 a.save()
                 regel_treffer += 1
-                self.stdout.write(f"{a.titel[:50]} → AUSSCHLUSS (Regel: {treffer})")
+                self.stdout.write(f"{a.titel[:50]} -> AUSSCHLUSS (Regel: {treffer})".encode("ascii", "replace").decode())
                 continue
             quelle = a.seitentext or f"{a.titel}\n{a.firma} - {a.ort}\n{a.gehalt}\n{a.snippet}"
             try:
                 system = (SYSTEM_KURZ if kurz else SYSTEM_VOLL) + "\n\nBEWERBERPROFIL:\n" + profil()
                 d = complete_json(system, quelle)
-                a.daten, a.kategorie, a.passung = normalisieren(d, quelle, kurz)
+                a.daten, a.kategorie, a.passung = normalisieren(d, quelle, kurz, begriffe)
                 a.status, a.fehler = S.AUSGEWERTET, ""
                 ok += 1
-                self.stdout.write(f"{a.titel[:50]} → {a.kategorie} / {a.passung}")
             except Exception as e:
                 a.status, a.fehler = S.FEHLER, str(e)[:500]
                 fail += 1
-                self.stderr.write(f"{a.titel[:50]}: {e}")
+                self.stderr.write(f"{a.titel[:50]}: {e}".encode("ascii", "replace").decode())
             a.save()
+            if a.status == S.AUSGEWERTET:
+                self.stdout.write(f"{a.titel[:50]} -> {a.kategorie} / {a.passung}".encode("ascii", "replace").decode())
         self.stdout.write(self.style.SUCCESS(f"Per LLM: {ok}, per Regel ausgeschlossen: {regel_treffer}, Fehler: {fail}"))

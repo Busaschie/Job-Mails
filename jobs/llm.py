@@ -1,6 +1,7 @@
 """LLM-Zugriff mit umschaltbarem Anbieter (LLM_PROVIDER in .env)."""
 import json
 import re
+import time
 
 import requests
 from django.conf import settings
@@ -35,6 +36,30 @@ def complete_json(system, user):
         )
         r.raise_for_status()
         return _json_aus_text(r.json()["message"]["content"])
+    if prov == "groq":
+        if not settings.GROQ_API_KEY:
+            raise RuntimeError("GROQ_API_KEY fehlt.")
+        payload = {
+            "model": settings.GROQ_MODEL,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        }
+        if "gpt-oss" in settings.GROQ_MODEL:
+            payload["reasoning_effort"] = "low"
+        for versuch in range(5):
+            r = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
+                json=payload, timeout=120,
+            )
+            if r.status_code == 429:  # Rate-Limit: kurz warten und erneut versuchen
+                time.sleep(min(float(r.headers.get("retry-after", 5 * (versuch + 1))), 60))
+                continue
+            if not r.ok:
+                raise RuntimeError(f"Groq HTTP {r.status_code}: {r.text[:300]}")
+            return _json_aus_text(r.json()["choices"][0]["message"]["content"])
+        raise RuntimeError("Groq: Rate-Limit nach 5 Versuchen weiter aktiv.")
     if prov == "anthropic":
         if not settings.ANTHROPIC_API_KEY:
             raise RuntimeError("ANTHROPIC_API_KEY fehlt.")
@@ -47,4 +72,4 @@ def complete_json(system, user):
         )
         r.raise_for_status()
         return _json_aus_text("".join(b.get("text", "") for b in r.json()["content"]))
-    raise RuntimeError(f"LLM_PROVIDER '{prov}' nicht unterstützt (ollama | anthropic).")
+    raise RuntimeError(f"LLM_PROVIDER '{prov}' nicht unterstützt (ollama | groq | anthropic).")

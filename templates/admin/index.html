@@ -7,6 +7,18 @@
 {% block content %}
 <div class="flex flex-col gap-8 p-4">
   <section>
+    <h2 class="text-lg font-semibold mb-3">Heute im Blick</h2>
+    <div class="grid gap-4 grid-cols-2 md:grid-cols-4">
+      <div class="border rounded-default p-4 bg-white dark:bg-base-900 dark:border-base-800"><div class="text-sm text-base-500">Shortlist</div><div class="text-3xl font-semibold">{{ shortlist_anzahl }}</div></div>
+      <div class="border rounded-default p-4 bg-white dark:bg-base-900 dark:border-base-800"><div class="text-sm text-base-500">Neue Anzeigen (24 h)</div><div class="text-3xl font-semibold">{{ neu_anzeigen }}</div></div>
+      <div class="border rounded-default p-4 bg-white dark:bg-base-900 dark:border-base-800"><div class="text-sm text-base-500">Neue Mails (24 h)</div><div class="text-3xl font-semibold">{{ neu_mails }}</div></div>
+      {% for label, n in kategorie_karten %}
+      <div class="border rounded-default p-4 bg-white dark:bg-base-900 dark:border-base-800"><div class="text-sm text-base-500">Kategorie {{ label }}</div><div class="text-3xl font-semibold">{{ n }}</div></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
     <h2 class="text-lg font-semibold mb-3">Mails ({{ mails_gesamt }})</h2>
     <div class="grid gap-4 grid-cols-1 md:grid-cols-3">
       {% for label, n in ordner_karten %}
@@ -45,6 +57,20 @@
       </div>
       {% endfor %}
     </div>
+  </section>
+
+  <section>
+    <h2 class="text-lg font-semibold mb-3">Letzte Pipeline-Läufe</h2>
+    <table class="w-full text-sm border rounded-default dark:border-base-800">
+      <thead><tr class="text-left"><th class="p-2">Start</th><th class="p-2">Status</th><th class="p-2">Neue Mails</th><th class="p-2">Neue Anzeigen</th><th class="p-2">Ausgewertet</th><th class="p-2">Fehler</th></tr></thead>
+      <tbody>
+      {% for l in laeufe %}
+        <tr class="border-t dark:border-base-800"><td class="p-2">{{ l.gestartet|date:"d.m.Y H:i" }}</td><td class="p-2">{{ l.get_status_display }}</td><td class="p-2">{{ l.mails_neu }}</td><td class="p-2">{{ l.anzeigen_neu }}</td><td class="p-2">{{ l.ausgewertet }}</td><td class="p-2">{{ l.fehler }}</td></tr>
+      {% empty %}
+        <tr><td class="p-2" colspan="6">Noch keine Läufe protokolliert.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
   </section>
 
   <section>

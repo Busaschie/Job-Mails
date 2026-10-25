@@ -4,7 +4,8 @@ from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
 
-from .models import Bewerbung, Mail, Regel, Shortlist, Stellenanzeige
+from .models import Bewerbung, Mail, PipelineLauf, Regel, Shortlist, Stellenanzeige
+from .shortlist import mit_score, shortlist_basis
 
 
 class BewerbungInline(TabularInline):
@@ -171,17 +172,19 @@ class StellenanzeigeAdmin(ModelAdmin):
 
 @admin.register(Shortlist)
 class ShortlistAdmin(StellenanzeigeAdmin):
-    list_display = ("nr", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "beworben", "grund", "link")
+    list_display = ("nr", "punkte", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "beworben", "grund", "link")
     list_filter = ("kategorie", "passung", "status")
-    ordering = ("passung", "kategorie", "-erstellt_am")
     actions = ["als_beworben", "verwerfen", "als_passend"]
 
+    def get_ordering(self, request):
+        return ["-score", "-erstellt_am"]  # Methode statt Attribut: score ist annotiert, kein Modellfeld
+
     def get_queryset(self, request):
-        from django.db.models import Q
-        aktiv = [Stellenanzeige.Status.AUSGEWERTET, Stellenanzeige.Status.ABGERUFEN]
-        return super().get_queryset(request).filter(status__in=aktiv).filter(
-            Q(passung="passt") | (Q(passung__in=["teilweise", "unklar"]) & Q(kategorie__in=["frontend", "vibecoding"]))
-        )
+        return mit_score(shortlist_basis(Shortlist._default_manager.all()))
+
+    @admin.display(description="Score", ordering="score")
+    def punkte(self, obj):
+        return obj.score
 
     @admin.display(description="Begründung")
     def grund(self, obj):
@@ -209,3 +212,16 @@ class ShortlistAdmin(StellenanzeigeAdmin):
     @admin.action(description="Als „Passt“ markieren")
     def als_passend(self, request, queryset):
         queryset.update(passung="passt")
+
+
+@admin.register(PipelineLauf)
+class PipelineLaufAdmin(ModelAdmin):
+    list_display = ("gestartet", "beendet", "status", "mails_neu", "anzeigen_neu", "ausgewertet", "fehler")
+    list_filter = ("status",)
+    readonly_fields = [f.name for f in PipelineLauf._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

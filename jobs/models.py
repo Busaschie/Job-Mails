@@ -121,3 +121,27 @@ class Shortlist(Stellenanzeige):
         proxy = True
         verbose_name = "Shortlist"
         verbose_name_plural = "Shortlist"
+
+
+class PipelineLauf(models.Model):
+    class Status(models.TextChoices):
+        LAEUFT = "laeuft", "Läuft"
+        OK = "ok", "Erfolgreich"
+        FEHLER = "fehler", "Mit Fehlern"
+
+    gestartet = models.DateTimeField("Gestartet", auto_now_add=True)
+    beendet = models.DateTimeField("Beendet", null=True, blank=True)
+    status = models.CharField("Status", max_length=10, choices=Status.choices, default=Status.LAEUFT)
+    mails_neu = models.IntegerField("Neue Mails", default=0)
+    anzeigen_neu = models.IntegerField("Neue Anzeigen", default=0)
+    ausgewertet = models.IntegerField("Ausgewertet", default=0)
+    fehler = models.IntegerField("Anzeigen mit Fehler (neu)", default=0)
+    meldung = models.TextField("Meldungen", blank=True)
+
+    class Meta:
+        verbose_name = "Pipeline-Lauf"
+        verbose_name_plural = "Pipeline-Läufe"
+        ordering = ["-gestartet"]
+
+    def __str__(self):
+        return f"Lauf {self.gestartet:%d.%m.%Y %H:%M}"

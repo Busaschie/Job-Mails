@@ -54,7 +54,7 @@
       <tbody>
       {% for b in letzte_bewerbungen %}
         <tr class="border-t dark:border-base-800">
-          <td class="p-2">{{ b.mail }}</td><td class="p-2">{{ b.mail.firma }}</td>
+          <td class="p-2">{{ b.anzeige.titel }}</td><td class="p-2">{{ b.anzeige.firma }}</td>
           <td class="p-2">{{ b.beworben_am|date:"d.m.Y" }}</td><td class="p-2">{{ b.get_status_display }}</td>
         </tr>
       {% empty %}

@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin
 from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
@@ -25,7 +26,6 @@ class MailAdmin(ModelAdmin):
     list_filter = ("ordner", "absender")
     search_fields = ("betreff", "titel", "firma", "treffer")
     date_hierarchy = "empfangen_am"
-    inlines = [BewerbungInline]
     actions = ["nach_frontend", "nach_vibecoding", "nach_pruefung"]
 
     @admin.action(description="Nach „Frontend“")
@@ -43,23 +43,56 @@ class MailAdmin(ModelAdmin):
 
 @admin.register(Bewerbung)
 class BewerbungAdmin(ModelAdmin):
-    list_display = ("mail", "beworben_am", "status")
+    list_display = ("anzeige", "firma", "beworben_am", "status")
     list_filter = ("status",)
     date_hierarchy = "beworben_am"
+
+    @admin.display(description="Firma")
+    def firma(self, obj):
+        return obj.anzeige.firma if obj.anzeige else ""
+
+
+class StellenanzeigeForm(forms.ModelForm):
+    """Bewerbungsfelder direkt im Formular der Anzeige (statt Inline unten)."""
+    beworben_am = forms.DateField(required=False, label="Beworben am",
+                                  widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
+    bewerbung_status = forms.ChoiceField(required=False, label="Bewerbungsstatus",
+                                         choices=[("", "— keine Bewerbung —")] + list(Bewerbung.Status.choices))
+    bewerbung_notizen = forms.CharField(required=False, label="Notizen zur Bewerbung",
+                                        widget=forms.Textarea(attrs={"rows": 3}))
+
+    class Meta:
+        model = Stellenanzeige
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        b = getattr(self.instance, "bewerbung", None) if self.instance.pk else None
+        if b:
+            self.fields["beworben_am"].initial = b.beworben_am
+            self.fields["bewerbung_status"].initial = b.status
+            self.fields["bewerbung_notizen"].initial = b.notizen
 
 
 @admin.register(Stellenanzeige)
 class StellenanzeigeAdmin(ModelAdmin):
-    list_display = ("nr", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "status", "erstellt_am")
+    form = StellenanzeigeForm
+    list_display = ("nr", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "status", "beworben", "erstellt_am")
     list_filter = ("passung", "kategorie", "status")
     search_fields = ("titel", "firma", "ort", "snippet")
     fieldsets = (
         (None, {"fields": (("nr", "erstellt_am"), "titel", "firma", "ort", "gehalt", "alter_text", "status", "passung", "kategorie",
                            "anzeige_link", "snippet", "daten_lesbar", "seitentext")}),
+        ("Bewerbung", {"fields": ("beworben_am", "bewerbung_status", "bewerbung_notizen")}),
         ("Rohdaten (JSON)", {"classes": ("collapse",), "fields": ("daten",)}),
         ("Technisches", {"classes": ("collapse",), "fields": ("fehler", "mail", "schluessel")}),
     )
     readonly_fields = ("nr", "daten_lesbar", "anzeige_link", "schluessel", "mail", "erstellt_am")
+
+    @admin.display(description="Beworben")
+    def beworben(self, obj):
+        b = getattr(obj, "bewerbung", None)
+        return f"{b.get_status_display()} ({b.beworben_am:%d.%m.%Y})" if b and b.beworben_am else (b.get_status_display() if b else "")
 
     @admin.display(description="Auswertung (lesbar)")
     def daten_lesbar(self, obj):
@@ -120,6 +153,15 @@ class StellenanzeigeAdmin(ModelAdmin):
             obj.status = Stellenanzeige.Status.ABGERUFEN
             obj.fehler = ""
         super().save_model(request, obj, form, change)
+        cd = form.cleaned_data
+        datum, status, notizen = cd.get("beworben_am"), cd.get("bewerbung_status"), cd.get("bewerbung_notizen", "")
+        if datum or status or notizen:
+            b, _ = Bewerbung.objects.get_or_create(anzeige_id=obj.pk)
+            b.beworben_am, b.notizen = datum, notizen
+            b.status = status or b.status or Bewerbung.Status.GESENDET
+            b.save()
+        else:
+            Bewerbung.objects.filter(anzeige_id=obj.pk).delete()
 
     @admin.display(description="Anzeige")
     def anzeige_link(self, obj):
@@ -129,10 +171,10 @@ class StellenanzeigeAdmin(ModelAdmin):
 
 @admin.register(Shortlist)
 class ShortlistAdmin(StellenanzeigeAdmin):
-    list_display = ("nr", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "status", "grund", "link")
+    list_display = ("nr", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "beworben", "grund", "link")
     list_filter = ("kategorie", "passung", "status")
     ordering = ("passung", "kategorie", "-erstellt_am")
-    actions = ["verwerfen", "als_passend"]
+    actions = ["als_beworben", "verwerfen", "als_passend"]
 
     def get_queryset(self, request):
         from django.db.models import Q
@@ -149,6 +191,16 @@ class ShortlistAdmin(StellenanzeigeAdmin):
     @admin.display(description="Anzeige")
     def link(self, obj):
         return format_html('<a href="{}" target="_blank" rel="noopener">öffnen</a>', obj.url)
+
+    @admin.action(description="Als beworben markieren (heute)")
+    def als_beworben(self, request, queryset):
+        from datetime import date
+        neu = 0
+        for a in queryset:
+            _, c = Bewerbung.objects.get_or_create(
+                anzeige_id=a.pk, defaults={"beworben_am": date.today(), "status": Bewerbung.Status.GESENDET})
+            neu += c
+        self.message_user(request, f"{neu} Bewerbung(en) angelegt ({queryset.count() - neu} bestanden bereits).")
 
     @admin.action(description="Verwerfen (Ausschluss)")
     def verwerfen(self, request, queryset):

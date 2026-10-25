@@ -16,7 +16,7 @@ def dashboard_callback(request, context):
             "mails_gesamt": Mail.objects.count(),
             "ordner_karten": [(label, nach_ordner.get(key, 0)) for key, label in ordner.items()],
             "status_karten": [(label, nach_status.get(key, 0)) for key, label in status.items()],
-            "letzte_bewerbungen": Bewerbung.objects.select_related("mail")[:10],
+            "letzte_bewerbungen": Bewerbung.objects.select_related("anzeige")[:10],
         }
     )
     return context

@@ -7,6 +7,10 @@ import requests
 from django.conf import settings
 
 
+class RateLimitError(RuntimeError):
+    """Tages-/Minutenlimit des Anbieters erreicht – der Lauf soll abbrechen, nicht jede Anzeige als Fehler markieren."""
+
+
 def _json_aus_text(txt):
     txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S).strip()
     try:
@@ -53,13 +57,16 @@ def complete_json(system, user):
                 headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
                 json=payload, timeout=120,
             )
-            if r.status_code == 429:  # Rate-Limit: kurz warten und erneut versuchen
-                time.sleep(min(float(r.headers.get("retry-after", 5 * (versuch + 1))), 60))
+            if r.status_code == 429:  # Rate-Limit
+                warte = float(r.headers.get("retry-after", 5 * (versuch + 1)))
+                if warte > 90:  # Tageslimit o. ä.: nicht warten, Lauf beenden
+                    raise RateLimitError(f"Groq-Limit erreicht, erneut möglich in ca. {int(warte // 60)} Min.")
+                time.sleep(warte)
                 continue
             if not r.ok:
                 raise RuntimeError(f"Groq HTTP {r.status_code}: {r.text[:300]}")
             return _json_aus_text(r.json()["choices"][0]["message"]["content"])
-        raise RuntimeError("Groq: Rate-Limit nach 5 Versuchen weiter aktiv.")
+        raise RateLimitError("Groq-Limit weiter aktiv (nach 5 Versuchen).")
     if prov == "anthropic":
         if not settings.ANTHROPIC_API_KEY:
             raise RuntimeError("ANTHROPIC_API_KEY fehlt.")

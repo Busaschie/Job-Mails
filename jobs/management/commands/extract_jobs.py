@@ -3,8 +3,10 @@ import re
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
-from jobs.llm import complete_json
+from jobs.llm import RateLimitError, complete_json
 from jobs.models import Regel, Stellenanzeige
+
+PROMPT_VERSION = "3"  # bei Prompt-/Profil-Änderungen erhöhen, dann --veraltet nutzen
 
 KATEGORIEN = """Kategorie: frontend = Web-Frontend-Entwicklung (HTML, CSS, JavaScript, React/Vue, UX/UI);
 vibecoding = KI-gestützte Entwicklung, KI-/LLM-Orchestrierung, Prompting, Automatisierung mit KI-Tools;
@@ -95,6 +97,7 @@ def normalisieren(d, quelle, kurz, begriffe=()):
             p = "teilweise"
     d["passung"] = p
     d["datenbasis"] = "mail-kurztext" if kurz else "seitentext"
+    d["prompt_version"] = PROMPT_VERSION
     return d, kat, p
 
 
@@ -109,14 +112,19 @@ class Command(BaseCommand):
         parser.add_argument("--retry", action="store_true", help="Auch Anzeigen mit Status Fehler erneut versuchen")
         parser.add_argument("--volltext", action="store_true", help="Nur Anzeigen mit gespeichertem Seitentext")
         parser.add_argument("--suche", default="", help="Nur Anzeigen, deren Titel oder Firma diesen Text enthalten")
+        parser.add_argument("--veraltet", action="store_true", help="Nur Anzeigen, die noch nicht mit dem aktuellen Prompt ausgewertet sind")
         parser.add_argument("--alle", action="store_true", help="Bereits ausgewertete Anzeigen erneut auswerten")
 
     def handle(self, *args, **opt):
         S = Stellenanzeige.Status
-        stati = [S.ABGERUFEN] + ([S.NEU] if opt["aus_mail"] else []) + ([S.AUSGEWERTET] if opt["alle"] else []) + ([S.FEHLER] if opt["retry"] else [])
+        stati = [S.ABGERUFEN] + ([S.NEU] if opt["aus_mail"] else []) + ([S.AUSGEWERTET] if (opt["alle"] or opt["veraltet"]) else []) + ([S.FEHLER] if opt["retry"] else [])
         ok = fail = regel_treffer = 0
         begriffe = list(Regel.objects.filter(aktiv=True, typ=Regel.Typ.NEGATIV).values_list("begriff", flat=True))
         qs = Stellenanzeige.objects.filter(pk=opt["id"]) if opt["id"] else Stellenanzeige.objects.filter(status__in=stati)
+        if opt["veraltet"] and not opt["id"]:
+            from django.db.models import Q
+            # Zeilen ohne Versionsmarke (Schlüssel fehlt) müssen mit, daher isnull explizit
+            qs = qs.filter(Q(daten__isnull=True) | Q(daten__prompt_version__isnull=True) | ~Q(daten__prompt_version=PROMPT_VERSION))
         if opt["volltext"]:
             qs = qs.exclude(seitentext="")
         if opt["suche"]:
@@ -126,7 +134,7 @@ class Command(BaseCommand):
             kurz = not a.seitentext
             treffer = titel_ausschluss(a.titel, begriffe)
             if treffer:
-                a.daten = {"passung": "ausschluss", "ausschluss_beleg": treffer, "datenbasis": "regel",
+                a.daten = {"passung": "ausschluss", "ausschluss_beleg": treffer, "datenbasis": "regel", "prompt_version": PROMPT_VERSION,
                            "passung_grund": f"Ausschlussbegriff im Titel: {treffer}"}
                 a.passung, a.kategorie, a.status, a.fehler = "ausschluss", "pruefung", S.AUSGEWERTET, ""
                 a.save()
@@ -140,6 +148,9 @@ class Command(BaseCommand):
                 a.daten, a.kategorie, a.passung = normalisieren(d, quelle, kurz, begriffe)
                 a.status, a.fehler = S.AUSGEWERTET, ""
                 ok += 1
+            except RateLimitError as e:
+                self.stderr.write(f"Abbruch: {e} Fertige Anzeigen sind gespeichert; später mit demselben Befehl fortsetzen.")
+                break
             except Exception as e:
                 a.status, a.fehler = S.FEHLER, str(e)[:500]
                 fail += 1

@@ -64,7 +64,8 @@ class Bewerbung(models.Model):
         ABSAGE = "absage", "Absage"
         ZURUECK = "zurueck", "Zurückgezogen"
 
-    mail = models.OneToOneField(Mail, on_delete=models.CASCADE, related_name="bewerbung")
+    anzeige = models.OneToOneField("Stellenanzeige", on_delete=models.CASCADE, related_name="bewerbung",
+                                   null=True, verbose_name="Stellenanzeige")
     beworben_am = models.DateField("Beworben am", null=True, blank=True)
     status = models.CharField("Status", max_length=12, choices=Status.choices, default=Status.VORBEREITET)
     notizen = models.TextField("Notizen", blank=True)
@@ -75,7 +76,7 @@ class Bewerbung(models.Model):
         ordering = ["-beworben_am"]
 
     def __str__(self):
-        return f"Bewerbung: {self.mail}"
+        return f"Bewerbung: {self.anzeige}"
 
 
 class Stellenanzeige(models.Model):

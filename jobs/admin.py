@@ -2,6 +2,7 @@ from django import forms
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.contrib import admin
+from django.utils.timezone import localtime
 from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
@@ -115,16 +116,16 @@ class StellenanzeigeForm(forms.ModelForm):
 class StellenanzeigeAdmin(ModelAdmin):
     form = StellenanzeigeForm
     list_display = ("nr", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "status", "beworben", "erstellt_am")
-    list_filter = ("passung", "kategorie", "status")
+    list_filter = ("quelle", "passung", "kategorie", "status")
     search_fields = ("titel", "firma", "ort", "snippet")
     fieldsets = (
-        (None, {"fields": (("nr", "erstellt_am"), "titel", "firma", "ort", "gehalt", "alter_text", "status", "passung", "kategorie",
+        (None, {"fields": ("kopfzeile", "portal", "titel", "firma", "ort", "gehalt", "alter_text", "status", "passung", "kategorie",
                            "anzeige_link", "snippet", "daten_lesbar", "seitentext")}),
         ("Bewerbung", {"fields": ("beworben_am", "bewerbung_status", "bewerbung_notizen")}),
         ("Rohdaten (JSON)", {"classes": ("collapse",), "fields": ("daten",)}),
         ("Technisches", {"classes": ("collapse",), "fields": ("fehler", "mail", "schluessel", "duplikat_von")}),
     )
-    readonly_fields = ("nr", "daten_lesbar", "anzeige_link", "schluessel", "mail", "erstellt_am", "duplikat_von")
+    readonly_fields = ("nr", "kopfzeile", "portal", "daten_lesbar", "anzeige_link", "schluessel", "mail", "erstellt_am", "duplikat_von")
 
     @admin.display(description="Beworben")
     def beworben(self, obj):
@@ -174,6 +175,17 @@ class StellenanzeigeAdmin(ModelAdmin):
         )
         return mark_safe(html)
 
+    @admin.display(description="Nr. / Erstellt am")
+    def kopfzeile(self, obj):
+        if not obj.pk:
+            return "–"
+        return format_html('<span style="display:inline-flex;gap:3rem;flex-wrap:wrap"><span><strong>{}</strong></span><span>{}</span></span>',
+                           obj.pk, localtime(obj.erstellt_am).strftime("%d.%m.%Y %H:%M"))
+
+    @admin.display(description="Jobportal")
+    def portal(self, obj):
+        return obj.get_quelle_display() if obj.pk else "–"
+
     @admin.display(description="Nr.", ordering="id")
     def nr(self, obj):
         return obj.pk
@@ -202,14 +214,17 @@ class StellenanzeigeAdmin(ModelAdmin):
 
     @admin.display(description="Anzeige")
     def anzeige_link(self, obj):
-        art = "Indeed-Anzeige" if "viewjob" in obj.url else "Werbeanzeige (Tracking-Link)"
+        if obj.quelle == "indeed":
+            art = "Indeed-Anzeige" if "viewjob" in obj.url else "Indeed-Werbeanzeige (Tracking-Link)"
+        else:
+            art = f"{obj.get_quelle_display()}-Anzeige"
         return format_html('<a href="{}" target="_blank" rel="noopener">{} öffnen</a>', obj.url, art)
 
 
 @admin.register(Shortlist)
 class ShortlistAdmin(StellenanzeigeAdmin):
     list_display = ("nr", "punkte", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "beworben", "grund", "link")
-    list_filter = ("kategorie", "passung", "status")
+    list_filter = ("quelle", "kategorie", "passung", "status")
     actions = ["als_beworben", "verwerfen", "als_passend"]
 
     def get_ordering(self, request):

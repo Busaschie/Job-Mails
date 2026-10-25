@@ -29,6 +29,8 @@ class Mail(models.Model):
     class Ordner(models.TextChoices):
         EINGANG = "eingang", "Posteingang"
         INDEED = "indeed", "Indeed"
+        STEPSTONE = "stepstone", "StepStone"
+        JOBWARE = "jobware", "Jobware"
         FRONTEND = "frontend", "Frontend"
         VIBECODING = "vibecoding", "VibeCoding"
         PRUEFUNG = "pruefung", "Pruefung"
@@ -86,6 +88,8 @@ class Stellenanzeige(models.Model):
         AUSGEWERTET = "ausgewertet", "Per LLM ausgewertet"
         FEHLER = "fehler", "Fehler"
 
+    quelle = models.CharField("Quelle", max_length=12, default="indeed",
+                              choices=[("indeed", "Indeed"), ("stepstone", "StepStone"), ("jobware", "Jobware")])
     schluessel = models.CharField("Schlüssel (Indeed-jk oder Hash)", max_length=64, unique=True)
     mail = models.ForeignKey(Mail, on_delete=models.SET_NULL, null=True, related_name="anzeigen", verbose_name="Erste Mail")
     titel = models.CharField("Titel", max_length=300)

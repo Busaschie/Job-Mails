@@ -12,6 +12,10 @@ from django.utils import timezone
 from jobs.models import Mail, Regel
 
 APPLY_SENDER = "indeedapply@indeed.com"
+PORTALE = [  # (Absender, Ordnername, Mail.Ordner)
+    ("info@jobagent.stepstone.de", "StepStone", Mail.Ordner.STEPSTONE),
+    ("info@jobmailer.jobware.de", "Jobware", Mail.Ordner.JOBWARE),
+]
 
 ZIELE = {
     Mail.Ordner.INDEED: "Indeed",
@@ -101,12 +105,46 @@ class Command(BaseCommand):
         imap.expunge()
         self.stdout.write(f"{bewegt} Bewerbungs-Mail(s) nach Beworben verschoben.")
 
+    def _portal(self, imap, base, delim, opt, absender, name, ordner):
+        """Mails eines Job-Portals -> Mail-Eintrag + Zielordner."""
+        imap.select(f'"{settings.IMAP_FOLDER}"')
+        typ, data = imap.uid("search", None, "FROM", f'"{absender}"')
+        uids = data[0].split() if typ == "OK" and data and data[0] else []
+        self.stdout.write(f"{len(uids)} Mails von '{absender}'.")
+        ziel = f'"{base}{delim}{name}"'
+        neu = bewegt = 0
+        for uid in uids:
+            typ, d = imap.uid("fetch", uid, "(BODY.PEEK[HEADER])")
+            if typ != "OK" or not d or not isinstance(d[0], tuple):
+                continue
+            msg = email.message_from_bytes(d[0][1], policy=default_policy)
+            mid = (msg["Message-ID"] or f"uid-{uid.decode()}").strip()
+            if not Mail.objects.filter(message_id=mid).exists():
+                betreff = str(make_header(decode_header(msg["Subject"] or "")))[:500]
+                datum = email.utils.parsedate_to_datetime(msg["Date"]) if msg["Date"] else timezone.now()
+                Mail.objects.create(message_id=mid, betreff=betreff, titel=betreff[:255], absender=(msg["From"] or "")[:255],
+                                    empfangen_am=datum, ordner=ordner)
+                neu += 1
+            if opt["dry_run"]:
+                continue
+            typ, antwort = imap.uid("copy", uid, ziel)
+            if typ == "OK":
+                imap.uid("store", uid, "+FLAGS", r"(\Deleted)")
+                bewegt += 1
+            else:
+                self.stderr.write(f"Kopieren nach {ziel} fehlgeschlagen: {antwort}")
+        if not opt["dry_run"] and bewegt:
+            imap.expunge()
+        self.stdout.write(f"{name}: {neu} neu erfasst, {bewegt} verschoben.")
+
     def _scan(self, imap, opt):
         s = settings
         delim = self._delimiter(imap)
         base = s.IMAP_BASE_FOLDER.replace("/", delim)
         imap.select(f'"{s.IMAP_FOLDER}"')
         self._beworben(imap, base, delim, opt)
+        for absender, name, ordner in PORTALE:
+            self._portal(imap, base, delim, opt, absender, name, ordner)
         typ, data = imap.uid("search", None, "FROM", f'"{s.IMAP_SENDER}"')
         uids = data[0].split()[-opt["limit"]:]
         self.stdout.write(f"{len(uids)} Mails von '{s.IMAP_SENDER}' gefunden.")

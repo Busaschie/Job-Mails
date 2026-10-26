@@ -6,9 +6,14 @@ from django.utils.timezone import localtime
 from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
+from unfold.widgets import INPUT_CLASSES, UnfoldAdminSelectWidget, UnfoldAdminTextareaWidget
 
-from .models import Bewerbung, Mail, PipelineLauf, Regel, Shortlist, Stellenanzeige
-from .shortlist import mit_score, shortlist_basis
+from .models import Archiv, Bewerbung, BewerbungEreignis, Mail, PipelineLauf, Regel, Shortlist, Stellenanzeige
+from . import anschreiben as anschreiben_mod
+from .bewerbung import buche, verlauf_html
+from .llm import RateLimitError
+from .dashboard import NACHFASS_TAGE
+from .shortlist import aktuell, archiv, mit_score, shortlist_basis
 
 
 class BewerbungInline(TabularInline):
@@ -45,16 +50,107 @@ class MailAdmin(ModelAdmin):
         queryset.update(ordner=Mail.Ordner.PRUEFUNG)
 
 
+class StatusDatumWidget(forms.MultiWidget):
+    """Status-Dropdown und Datum nebeneinander in einer Zeile."""
+
+    def __init__(self, choices, attrs=None):
+        super().__init__(
+            [UnfoldAdminSelectWidget(choices=choices),
+             forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "title": "Datum der Änderung (leer = heute)",
+                                                       "class": " ".join(INPUT_CLASSES)})], attrs)
+
+    def decompress(self, value):
+        return list(value) if value else [None, None]
+
+    def render(self, name, value, attrs=None, renderer=None):
+        # Jedes Teil in eigenem Rahmen mit fester Breite (der Pfeil des Unfold-Selects haengt am Rahmen)
+        ctx = self.get_context(name, value, attrs)
+        teile = [self._render(w["template_name"], {"widget": w}, renderer) for w in ctx["widget"]["subwidgets"]]
+        breiten = ("15rem", "11rem")
+        html = "".join(f"<div style='width:{b}'>{t}</div>" for b, t in zip(breiten, teile))
+        return mark_safe(f"<div style='display:flex;gap:.75rem;align-items:flex-start'>{html}</div>")
+
+
+class StatusDatumField(forms.MultiValueField):
+    """Liefert (status, datum)."""
+
+    def __init__(self, choices, **kwargs):
+        super().__init__(fields=(forms.ChoiceField(choices=choices, required=False), forms.DateField(required=False)),
+                         widget=StatusDatumWidget(choices), require_all_fields=False, required=False, **kwargs)
+
+    def compress(self, data_list):
+        return tuple(data_list) if data_list else ("", None)
+
+
+@admin.register(BewerbungEreignis)
+class BewerbungEreignisAdmin(ModelAdmin):
+    """Einzelner Verlaufseintrag (Link 'bearbeiten' im Verlauf); nach dem Speichern zurueck zur Anzeige."""
+    fields = ("bewerbung", "datum", "status", "notiz")
+    readonly_fields = ("bewerbung",)
+
+    def has_module_permission(self, request):
+        return False  # nicht in der Navigation
+
+    def _zurueck(self, obj):
+        return HttpResponseRedirect(reverse("admin:jobs_stellenanzeige_change", args=[obj.bewerbung.anzeige_id]))
+
+    def response_change(self, request, obj):
+        return self._zurueck(obj)
+
+    def response_delete(self, request, obj_display, obj_id):
+        anz = request.session.pop("_ereignis_anzeige", None)
+        return HttpResponseRedirect(reverse("admin:jobs_stellenanzeige_change", args=[anz])) if anz else super().response_delete(request, obj_display, obj_id)
+
+    def delete_model(self, request, obj):
+        request.session["_ereignis_anzeige"] = obj.bewerbung.anzeige_id
+        super().delete_model(request, obj)
+
+
+class BewerbungForm(forms.ModelForm):
+    status_kombi = StatusDatumField(list(Bewerbung.Status.choices), label="Status / Datum")
+    notiz_neu = forms.CharField(required=False, label="Neue Notiz (wird mit Datum im Verlauf abgelegt)",
+                                widget=UnfoldAdminTextareaWidget(attrs={"rows": 3, "style": "max-width:42rem"}))
+
+    class Meta:
+        model = Bewerbung
+        fields = ("anzeige", "beworben_am")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["status_kombi"].initial = (self.instance.status if self.instance.pk else Bewerbung.Status.GESENDET, None)
+
+
 @admin.register(Bewerbung)
 class BewerbungAdmin(ModelAdmin):
-    list_display = ("anzeige", "firma", "beworben_am", "status")
+    form = BewerbungForm
+    list_display = ("anzeige", "firma", "beworben_am", "status", "seit")
     list_filter = ("status",)
     date_hierarchy = "beworben_am"
     fieldsets = (
-        ("Bewerbung", {"fields": ("anzeige", "beworben_am", "status", "notizen")}),
+        ("Bewerbung", {"fields": ("anzeige", "beworben_am", "status_kombi", "notiz_neu", "verlauf")}),
         ("Stellenanzeige", {"fields": ("a_titel", "a_firma", "a_ort", "a_gehalt", "a_passung", "a_link", "a_auswertung")}),
     )
-    readonly_fields = ("a_titel", "a_firma", "a_ort", "a_gehalt", "a_passung", "a_link", "a_auswertung")
+    readonly_fields = ("verlauf", "a_titel", "a_firma", "a_ort", "a_gehalt", "a_passung", "a_link", "a_auswertung")
+
+    @admin.display(description="Verlauf")
+    def verlauf(self, obj):
+        return verlauf_html(obj)
+
+    def save_model(self, request, obj, form, change):
+        alt = Bewerbung.objects.filter(pk=obj.pk).values_list("status", flat=True).first() if obj.pk else None
+        status, datum = form.cleaned_data.get("status_kombi") or ("", None)
+        obj.status = status or obj.status or Bewerbung.Status.GESENDET
+        super().save_model(request, obj, form, change)
+        buche(obj, alt, datum or (obj.beworben_am if alt is None else None), form.cleaned_data.get("notiz_neu", ""))
+
+    @admin.display(description="Seit")
+    def seit(self, obj):
+        if not obj.beworben_am:
+            return ""
+        from datetime import date
+        n = (date.today() - obj.beworben_am).days
+        warn = " ⚠ nachfassen" if obj.status == Bewerbung.Status.GESENDET and n >= NACHFASS_TAGE else ""
+        return f"{n} Tage{warn}"
 
     @admin.display(description="Titel")
     def a_titel(self, obj):
@@ -94,10 +190,9 @@ class StellenanzeigeForm(forms.ModelForm):
     """Bewerbungsfelder direkt im Formular der Anzeige (statt Inline unten)."""
     beworben_am = forms.DateField(required=False, label="Beworben am",
                                   widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
-    bewerbung_status = forms.ChoiceField(required=False, label="Bewerbungsstatus",
-                                         choices=[("", "— keine Bewerbung —")] + list(Bewerbung.Status.choices))
-    bewerbung_notizen = forms.CharField(required=False, label="Notizen zur Bewerbung",
-                                        widget=forms.Textarea(attrs={"rows": 3}))
+    bewerbung_status = StatusDatumField([("", "— keine Bewerbung —")] + list(Bewerbung.Status.choices), label="Bewerbungsstatus / Datum")
+    bewerbung_notizen = forms.CharField(required=False, label="Neue Notiz (wird mit Datum im Verlauf abgelegt)",
+                                        widget=UnfoldAdminTextareaWidget(attrs={"rows": 3, "style": "max-width:42rem"}))
 
     class Meta:
         model = Stellenanzeige
@@ -108,24 +203,54 @@ class StellenanzeigeForm(forms.ModelForm):
         b = getattr(self.instance, "bewerbung", None) if self.instance.pk else None
         if b:
             self.fields["beworben_am"].initial = b.beworben_am
-            self.fields["bewerbung_status"].initial = b.status
-            self.fields["bewerbung_notizen"].initial = b.notizen
+            self.fields["bewerbung_status"].initial = (b.status, None)
 
 
 @admin.register(Stellenanzeige)
 class StellenanzeigeAdmin(ModelAdmin):
     form = StellenanzeigeForm
-    list_display = ("nr", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "status", "beworben", "erstellt_am")
-    list_filter = ("quelle", "passung", "kategorie", "status")
+    list_display = ("nr", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "interessant", "status", "beworben", "erstellt_am")
+    list_filter = ("interessant", "quelle", "passung", "kategorie", "status")
+    actions = ["als_interessant", "nicht_interessant", "anschreiben_erstellen"]
     search_fields = ("titel", "firma", "ort", "snippet")
     fieldsets = (
-        (None, {"fields": ("kopfzeile", "portal", "titel", "firma", "ort", "gehalt", "alter_text", "status", "passung", "kategorie",
+        (None, {"fields": ("kopfzeile", "portal", "titel", "firma", "ort", "gehalt", "alter_text", "status", "passung", "kategorie", "interessant",
                            "anzeige_link", "snippet", "daten_lesbar", "seitentext")}),
-        ("Bewerbung", {"fields": ("beworben_am", "bewerbung_status", "bewerbung_notizen")}),
+        ("Bewerbung", {"fields": ("beworben_am", "bewerbung_status", "bewerbung_notizen", "bewerbung_verlauf")}),
+        ("Anschreiben (Entwurf)", {"fields": ("anschreiben",)}),
         ("Rohdaten (JSON)", {"classes": ("collapse",), "fields": ("daten",)}),
         ("Technisches", {"classes": ("collapse",), "fields": ("fehler", "mail", "schluessel", "duplikat_von")}),
     )
-    readonly_fields = ("nr", "kopfzeile", "portal", "daten_lesbar", "anzeige_link", "schluessel", "mail", "erstellt_am", "duplikat_von")
+    readonly_fields = ("bewerbung_verlauf", "nr", "kopfzeile", "portal", "daten_lesbar", "anzeige_link", "schluessel", "mail", "erstellt_am", "duplikat_von")
+
+    def get_queryset(self, request):
+        return aktuell(super().get_queryset(request))  # aeltere (>4 Wochen) liegen im Archiv
+
+    @admin.action(description="Als interessant markieren")
+    def als_interessant(self, request, queryset):
+        n = Stellenanzeige.objects.filter(pk__in=list(queryset.values_list("pk", flat=True))).update(interessant=True)
+        self.message_user(request, f"{n} Anzeige(n) als interessant markiert.")
+
+    @admin.action(description="Markierung 'interessant' entfernen")
+    def nicht_interessant(self, request, queryset):
+        n = Stellenanzeige.objects.filter(pk__in=list(queryset.values_list("pk", flat=True))).update(interessant=False)
+        self.message_user(request, f"{n} Markierung(en) entfernt.")
+
+    @admin.action(description="Anschreiben-Entwurf erstellen (max. 5)")
+    def anschreiben_erstellen(self, request, queryset):
+        fertig = 0
+        for a in Stellenanzeige.objects.filter(pk__in=list(queryset.values_list("pk", flat=True))[:5]):
+            try:
+                a.anschreiben = anschreiben_mod.erstelle(a)
+            except RateLimitError as e:
+                self.message_user(request, f"Abbruch (Limit): {e}", level="error")
+                break
+            except Exception as e:
+                self.message_user(request, f"{a.pk}: {str(e)[:200]}", level="error")
+                continue
+            a.save(update_fields=["anschreiben"])
+            fertig += 1
+        self.message_user(request, f"{fertig} Entwurf/Entwürfe erstellt - in der Anzeige unter 'Anschreiben (Entwurf)'.")
 
     @admin.display(description="Beworben")
     def beworben(self, obj):
@@ -203,14 +328,21 @@ class StellenanzeigeAdmin(ModelAdmin):
             obj.fehler = ""
         super().save_model(request, obj, form, change)
         cd = form.cleaned_data
-        datum, status, notizen = cd.get("beworben_am"), cd.get("bewerbung_status"), cd.get("bewerbung_notizen", "")
+        status, status_datum = cd.get("bewerbung_status") or ("", None)
+        datum, notizen = cd.get("beworben_am"), cd.get("bewerbung_notizen", "")
         if datum or status or notizen:
-            b, _ = Bewerbung.objects.get_or_create(anzeige_id=obj.pk)
-            b.beworben_am, b.notizen = datum, notizen
+            b, neu = Bewerbung.objects.get_or_create(anzeige_id=obj.pk)
+            alt = None if neu else b.status
+            b.beworben_am = datum
             b.status = status or b.status or Bewerbung.Status.GESENDET
             b.save()
+            buche(b, alt, status_datum or (datum if neu else None), notizen)
         else:
             Bewerbung.objects.filter(anzeige_id=obj.pk).delete()
+
+    @admin.display(description="Verlauf")
+    def bewerbung_verlauf(self, obj):
+        return verlauf_html(getattr(obj, "bewerbung", None) if obj.pk else None)
 
     @admin.display(description="Anzeige")
     def anzeige_link(self, obj):
@@ -223,9 +355,9 @@ class StellenanzeigeAdmin(ModelAdmin):
 
 @admin.register(Shortlist)
 class ShortlistAdmin(StellenanzeigeAdmin):
-    list_display = ("nr", "punkte", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "beworben", "grund", "link")
-    list_filter = ("quelle", "kategorie", "passung", "status")
-    actions = ["als_beworben", "verwerfen", "als_passend"]
+    list_display = ("nr", "punkte", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "interessant", "beworben", "grund", "link")
+    list_filter = ("interessant", "quelle", "kategorie", "passung", "status")
+    actions = ["als_interessant", "nicht_interessant", "anschreiben_erstellen", "als_beworben", "verwerfen", "als_passend"]
 
     def get_ordering(self, request):
         return ["-score", "-erstellt_am"]  # Methode statt Attribut: score ist annotiert, kein Modellfeld
@@ -251,8 +383,10 @@ class ShortlistAdmin(StellenanzeigeAdmin):
         from datetime import date
         neu = 0
         for a in queryset:
-            _, c = Bewerbung.objects.get_or_create(
+            b, c = Bewerbung.objects.get_or_create(
                 anzeige_id=a.pk, defaults={"beworben_am": date.today(), "status": Bewerbung.Status.GESENDET})
+            if c:
+                buche(b, None, b.beworben_am)
             neu += c
         self.message_user(request, f"{neu} Bewerbung(en) angelegt ({queryset.count() - neu} bestanden bereits).")
 
@@ -263,6 +397,14 @@ class ShortlistAdmin(StellenanzeigeAdmin):
     @admin.action(description="Als „Passt“ markieren")
     def als_passend(self, request, queryset):
         queryset.update(passung="passt")
+
+
+@admin.register(Archiv)
+class ArchivAdmin(StellenanzeigeAdmin):
+    list_filter = ("quelle", "passung", "kategorie")
+
+    def get_queryset(self, request):
+        return archiv(ModelAdmin.get_queryset(self, request))
 
 
 @admin.register(PipelineLauf)

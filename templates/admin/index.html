@@ -73,6 +73,20 @@
     </table>
   </section>
 
+  {% if nachfassen %}
+  <section>
+    <h2 class="text-lg font-semibold mb-3">Nachfassen? (beworben, seit mehr als {{ nachfass_tage }} Tagen ohne Antwort)</h2>
+    <table class="w-full text-sm border rounded-default dark:border-base-800">
+      <thead><tr class="text-left"><th class="p-2">Job</th><th class="p-2">Firma</th><th class="p-2">Beworben am</th></tr></thead>
+      <tbody>
+      {% for b in nachfassen %}
+        <tr class="border-t dark:border-base-800"><td class="p-2">{{ b.anzeige.titel }}</td><td class="p-2">{{ b.anzeige.firma }}</td><td class="p-2">{{ b.beworben_am|date:"d.m.Y" }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
   <section>
     <h2 class="text-lg font-semibold mb-3">Letzte Bewerbungen</h2>
     <table class="w-full text-sm border rounded-default dark:border-base-800">

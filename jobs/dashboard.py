@@ -7,6 +7,9 @@ from .models import Bewerbung, Mail, PipelineLauf, Stellenanzeige
 from .shortlist import shortlist_basis
 
 
+NACHFASS_TAGE = 10  # Bewerbung 'gesendet' ohne Antwort nach so vielen Tagen -> nachfassen
+
+
 def dashboard_callback(request, context):
     ordner = dict(Mail.Ordner.choices)
     nach_ordner = {r["ordner"]: r["n"] for r in Mail.objects.values("ordner").annotate(n=Count("id"))}
@@ -28,6 +31,10 @@ def dashboard_callback(request, context):
             "mails_gesamt": Mail.objects.count(),
             "ordner_karten": [(label, nach_ordner.get(key, 0)) for key, label in ordner.items()],
             "status_karten": [(label, nach_status.get(key, 0)) for key, label in status.items()],
+            "nachfassen": Bewerbung.objects.filter(
+                status=Bewerbung.Status.GESENDET, beworben_am__lte=timezone.localdate() - timedelta(days=NACHFASS_TAGE)
+            ).select_related("anzeige").order_by("beworben_am"),
+            "nachfass_tage": NACHFASS_TAGE,
             "letzte_bewerbungen": Bewerbung.objects.select_related("anzeige")[:10],
         }
     )

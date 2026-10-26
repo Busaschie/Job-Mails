@@ -5,6 +5,7 @@ from django.core.management.base import BaseCommand
 
 from jobs.llm import RateLimitError, complete_json
 from jobs.models import Regel, Stellenanzeige
+from jobs.shortlist import aktuell
 
 PROMPT_VERSION = "4"  # bei Prompt-/Profil-Änderungen erhöhen, dann --veraltet nutzen
 
@@ -133,7 +134,7 @@ class Command(BaseCommand):
         begriffe = list(Regel.objects.filter(aktiv=True, typ=Regel.Typ.NEGATIV).values_list("begriff", flat=True))
         qs = Stellenanzeige.objects.filter(pk=opt["id"]) if opt["id"] else Stellenanzeige.objects.filter(status__in=stati)
         if not opt["id"]:
-            qs = qs.filter(duplikat_von__isnull=True)
+            qs = aktuell(qs).filter(duplikat_von__isnull=True)  # Archiv (>4 Wochen) wird nicht mehr bewertet
         if opt["veraltet"] and not opt["id"]:
             from django.db.models import Q
             # Zeilen ohne Versionsmarke (Schlüssel fehlt) müssen mit, daher isnull explizit

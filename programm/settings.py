@@ -175,6 +175,7 @@ UNFOLD = {
                 {"title": "Bewerbungen", "icon": "work", "link": reverse_lazy("admin:jobs_bewerbung_changelist")},
                 {"title": "Shortlist", "icon": "star", "link": reverse_lazy("admin:jobs_shortlist_changelist")},
                 {"title": "Stellenanzeigen", "icon": "description", "link": reverse_lazy("admin:jobs_stellenanzeige_changelist")},
+                {"title": "Archiv", "icon": "inventory_2", "link": reverse_lazy("admin:jobs_archiv_changelist")},
             ]},
             {"title": "Mails", "separator": True, "items": [
                 {"title": "Mails", "icon": "mail", "link": reverse_lazy("admin:jobs_mail_changelist")},

@@ -60,7 +60,7 @@ class Mail(models.Model):
 class Bewerbung(models.Model):
     class Status(models.TextChoices):
         VORBEREITET = "vorbereitet", "Vorbereitet"
-        GESENDET = "gesendet", "Gesendet"
+        GESENDET = "gesendet", "Beworben"
         ANTWORT = "antwort", "Antwort erhalten"
         EINLADUNG = "einladung", "Einladung Gespräch"
         ABSAGE = "absage", "Absage"
@@ -79,6 +79,23 @@ class Bewerbung(models.Model):
 
     def __str__(self):
         return f"Bewerbung: {self.anzeige}"
+
+
+class BewerbungEreignis(models.Model):
+    """Eintrag im Bewerbungsverlauf: Status + Datum + Notiz."""
+
+    bewerbung = models.ForeignKey(Bewerbung, on_delete=models.CASCADE, related_name="ereignisse")
+    datum = models.DateField("Datum")
+    status = models.CharField("Status", max_length=12, choices=Bewerbung.Status.choices)
+    notiz = models.TextField("Notiz", blank=True)
+
+    class Meta:
+        verbose_name = "Verlaufseintrag"
+        verbose_name_plural = "Bewerbungsverlauf"
+        ordering = ["-datum", "-id"]
+
+    def __str__(self):
+        return f"{self.datum:%d.%m.%Y} {self.get_status_display()}"
 
 
 class Stellenanzeige(models.Model):
@@ -108,6 +125,8 @@ class Stellenanzeige(models.Model):
     passung = models.CharField("Passung zum Profil", max_length=10, blank=True,
                                choices=[("passt", "Passt"), ("teilweise", "Teilweise"), ("unklar", "Unklar"), ("ausschluss", "Ausschluss")])
     erstellt_am = models.DateTimeField(auto_now_add=True)
+    interessant = models.BooleanField("Interessant (Merker)", default=False)
+    anschreiben = models.TextField("Anschreiben (Entwurf)", blank=True)
     duplikat_von = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True,
                                      related_name="duplikate", verbose_name="Duplikat von")
 
@@ -118,6 +137,15 @@ class Stellenanzeige(models.Model):
 
     def __str__(self):
         return f"{self.titel} – {self.firma}"
+
+
+class Archiv(Stellenanzeige):
+    """Anzeigen, die aelter als 4 Wochen sind (automatisch, ohne Bewerbung)."""
+
+    class Meta:
+        proxy = True
+        verbose_name = "Archiv"
+        verbose_name_plural = "Archiv"
 
 
 class Shortlist(Stellenanzeige):

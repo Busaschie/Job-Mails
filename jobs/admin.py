@@ -355,7 +355,7 @@ class StellenanzeigeAdmin(ModelAdmin):
 
 @admin.register(Shortlist)
 class ShortlistAdmin(StellenanzeigeAdmin):
-    list_display = ("nr", "punkte", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "interessant", "beworben", "grund", "link")
+    list_display = ("nr", "punkte", "erstellt_am", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "interessant", "beworben", "grund", "link")
     list_filter = ("interessant", "quelle", "kategorie", "passung", "status")
     actions = ["als_interessant", "nicht_interessant", "anschreiben_erstellen", "als_beworben", "verwerfen", "als_passend"]
 

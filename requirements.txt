@@ -3,3 +3,4 @@ django-unfold
 psycopg[binary]
 requests
 beautifulsoup4
+python-docx

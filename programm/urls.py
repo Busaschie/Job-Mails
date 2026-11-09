@@ -22,4 +22,5 @@ from jobs import views
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('import/', views.import_text, name='import_text'),
+    path('anschreiben/<int:pk>/', views.anschreiben_download, name='anschreiben_download'),
 ]

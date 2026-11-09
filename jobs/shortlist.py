@@ -14,12 +14,13 @@ def _grenze():
 
 def aktuell(qs):
     """Nicht archiviert: juenger als 4 Wochen oder mit Bewerbung."""
-    return qs.filter(Q(erstellt_am__gte=_grenze()) | Q(bewerbung__isnull=False) | Q(interessant=True))
+    return qs.filter(nicht_geeignet=False).filter(
+        Q(erstellt_am__gte=_grenze()) | Q(bewerbung__isnull=False) | Q(interessant=True))
 
 
 def archiv(qs):
     """Archiv: aelter als 4 Wochen und ohne Bewerbung."""
-    return qs.filter(erstellt_am__lt=_grenze(), bewerbung__isnull=True, interessant=False)
+    return qs.filter(erstellt_am__lt=_grenze(), bewerbung__isnull=True, interessant=False, nicht_geeignet=False)
 
 
 def shortlist_basis(qs):

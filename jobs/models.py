@@ -126,6 +126,7 @@ class Stellenanzeige(models.Model):
                                choices=[("passt", "Passt"), ("teilweise", "Teilweise"), ("unklar", "Unklar"), ("ausschluss", "Ausschluss")])
     erstellt_am = models.DateTimeField(auto_now_add=True)
     interessant = models.BooleanField("Interessant (Merker)", default=False)
+    nicht_geeignet = models.BooleanField("Nicht geeignet", default=False)
     anschreiben = models.TextField("Anschreiben (Entwurf)", blank=True)
     duplikat_von = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True,
                                      related_name="duplikate", verbose_name="Duplikat von")
@@ -146,6 +147,15 @@ class Archiv(Stellenanzeige):
         proxy = True
         verbose_name = "Archiv"
         verbose_name_plural = "Archiv"
+
+
+class NichtGeeignet(Stellenanzeige):
+    """Anzeigen, die manuell als nicht geeignet markiert wurden."""
+
+    class Meta:
+        proxy = True
+        verbose_name = "Nicht geeignet"
+        verbose_name_plural = "Nicht geeignet"
 
 
 class Shortlist(Stellenanzeige):

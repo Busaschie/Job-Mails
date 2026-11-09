@@ -8,7 +8,7 @@ from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.widgets import INPUT_CLASSES, UnfoldAdminSelectWidget, UnfoldAdminTextareaWidget
 
-from .models import Archiv, Bewerbung, BewerbungEreignis, Mail, PipelineLauf, Regel, Shortlist, Stellenanzeige
+from .models import Archiv, Bewerbung, BewerbungEreignis, Mail, NichtGeeignet, PipelineLauf, Regel, Shortlist, Stellenanzeige
 from . import anschreiben as anschreiben_mod
 from .bewerbung import buche, verlauf_html
 from .llm import RateLimitError
@@ -211,20 +211,30 @@ class StellenanzeigeAdmin(ModelAdmin):
     form = StellenanzeigeForm
     list_display = ("nr", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "interessant", "status", "beworben", "erstellt_am")
     list_filter = ("interessant", "quelle", "passung", "kategorie", "status")
-    actions = ["als_interessant", "nicht_interessant", "anschreiben_erstellen"]
+    actions = ["als_nicht_geeignet", "als_interessant", "nicht_interessant", "anschreiben_erstellen"]
     search_fields = ("titel", "firma", "ort", "snippet")
     fieldsets = (
-        (None, {"fields": ("kopfzeile", "portal", "titel", "firma", "ort", "gehalt", "alter_text", "status", "passung", "kategorie", "interessant",
-                           "anzeige_link", "snippet", "daten_lesbar", "seitentext")}),
+        (None, {"fields": ("nicht_geeignet", "kopfzeile", "portal", "anzeige_link", "anschreiben_link", "titel", "firma", "ort", "gehalt", "alter_text", "status", "passung",
+                           "kategorie", "interessant", "snippet", "daten_lesbar", "seitentext")}),
         ("Bewerbung", {"fields": ("beworben_am", "bewerbung_status", "bewerbung_notizen", "bewerbung_verlauf")}),
         ("Anschreiben (Entwurf)", {"fields": ("anschreiben",)}),
         ("Rohdaten (JSON)", {"classes": ("collapse",), "fields": ("daten",)}),
         ("Technisches", {"classes": ("collapse",), "fields": ("fehler", "mail", "schluessel", "duplikat_von")}),
     )
-    readonly_fields = ("bewerbung_verlauf", "nr", "kopfzeile", "portal", "daten_lesbar", "anzeige_link", "schluessel", "mail", "erstellt_am", "duplikat_von")
+    readonly_fields = ("bewerbung_verlauf", "nr", "kopfzeile", "portal", "daten_lesbar", "anzeige_link", "anschreiben_link", "schluessel", "mail", "erstellt_am", "duplikat_von")
 
     def get_queryset(self, request):
         return aktuell(super().get_queryset(request))  # aeltere (>4 Wochen) liegen im Archiv
+
+    @admin.action(description="Als nicht geeignet markieren")
+    def als_nicht_geeignet(self, request, queryset):
+        n = Stellenanzeige.objects.filter(pk__in=list(queryset.values_list("pk", flat=True))).update(nicht_geeignet=True)
+        self.message_user(request, f"{n} Anzeige(n) nach 'Nicht geeignet' verschoben.")
+
+    @admin.action(description="Wieder als geeignet zurückholen")
+    def als_geeignet(self, request, queryset):
+        n = Stellenanzeige.objects.filter(pk__in=list(queryset.values_list("pk", flat=True))).update(nicht_geeignet=False)
+        self.message_user(request, f"{n} Anzeige(n) zurückgeholt.")
 
     @admin.action(description="Als interessant markieren")
     def als_interessant(self, request, queryset):
@@ -344,6 +354,15 @@ class StellenanzeigeAdmin(ModelAdmin):
     def bewerbung_verlauf(self, obj):
         return verlauf_html(getattr(obj, "bewerbung", None) if obj.pk else None)
 
+    @admin.display(description="Anschreiben")
+    def anschreiben_link(self, obj):
+        if not obj.pk:
+            return "–"
+        url = reverse("anschreiben_download", args=[obj.pk])
+        text = "Als Word herunterladen" if obj.anschreiben else "Anschreiben erstellen und als Word herunterladen"
+        neu = f' &nbsp;&middot;&nbsp; <a href="{url}?neu=1" style="text-decoration:underline">neu erstellen</a>' if obj.anschreiben else ""
+        return mark_safe(f'<a href="{url}" style="text-decoration:underline">{text}</a>{neu}')
+
     @admin.display(description="Anzeige")
     def anzeige_link(self, obj):
         if obj.quelle == "indeed":
@@ -357,7 +376,7 @@ class StellenanzeigeAdmin(ModelAdmin):
 class ShortlistAdmin(StellenanzeigeAdmin):
     list_display = ("nr", "punkte", "erstellt_am", "titel", "firma", "ort", "gehalt", "passung", "kategorie", "interessant", "beworben", "grund", "link")
     list_filter = ("interessant", "quelle", "kategorie", "passung", "status")
-    actions = ["als_interessant", "nicht_interessant", "anschreiben_erstellen", "als_beworben", "verwerfen", "als_passend"]
+    actions = ["als_nicht_geeignet", "als_interessant", "nicht_interessant", "anschreiben_erstellen", "als_beworben", "verwerfen", "als_passend"]
 
     def get_ordering(self, request):
         return ["-score", "-erstellt_am"]  # Methode statt Attribut: score ist annotiert, kein Modellfeld
@@ -405,6 +424,15 @@ class ArchivAdmin(StellenanzeigeAdmin):
 
     def get_queryset(self, request):
         return archiv(ModelAdmin.get_queryset(self, request))
+
+
+@admin.register(NichtGeeignet)
+class NichtGeeignetAdmin(StellenanzeigeAdmin):
+    list_filter = ("quelle", "passung", "kategorie")
+    actions = ["als_geeignet"]
+
+    def get_queryset(self, request):
+        return ModelAdmin.get_queryset(self, request).filter(nicht_geeignet=True)
 
 
 @admin.register(PipelineLauf)

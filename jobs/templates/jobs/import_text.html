@@ -47,7 +47,7 @@
   }).then(function (r) { return r.json(); }).then(function (j) {
     if (j.ok) {
       box.className = 'box ok';
-      box.textContent = '✔ Gespeichert: ' + j.titel + ' – ' + j.firma + ' (' + j.zeichen + ' Zeichen). Noch offen: ' + j.offen + '.';
+      box.textContent = '✔ Gespeichert: ' + j.titel + ' – ' + j.firma + ' (' + j.zeichen + ' Zeichen). Noch offen: ' + j.offen + '.' + (j.zugeordnet ? ' (Nr. ' + j.nr + ', ' + j.zugeordnet + ' zugeordnet, da die Job-ID nicht bekannt war)' : '');
       if (j.naechste) {
         var p = document.createElement('p');
         var a = document.createElement('a');

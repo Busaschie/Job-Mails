@@ -8,3 +8,5 @@ db.sqlite3
 profil.md
 .pipeline.lock
 pipeline.log
+briefkopf.md
+*.bak
